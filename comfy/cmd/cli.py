@@ -722,6 +722,8 @@ def _download_workflow_models(workflow_sources: list[str]) -> None:
 def run_workflow(
     workflows: list[str] = typer.Argument(..., help="Workflow files, URIs, '-' for stdin, or literal JSON."),
     all: bool = typer.Option(False, "--all", "-a", help="Install missing custom nodes and download missing models before running."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and print workflow JSON without executing."),
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     disable_progress: bool = typer.Option(False, "--disable-progress", help="Disable CLI progress bars."),
     block_runtime_package_installation: bool = typer.Option(False, "--block-runtime-package-installation", help="Block runtime package installations."),
     **kwargs,
@@ -756,9 +758,11 @@ def run_workflow(
     from ..component_model.setup import setup_pre_torch, setup_post_torch
 
     _all = all
+    _dry_run = dry_run
+    _format = format
     params = _collect_params(locals(), kwargs)
-    params.pop("all", None)
-    params.pop("_all", None)
+    for _k in ("all", "_all", "dry_run", "_dry_run", "format", "_format"):
+        params.pop(_k, None)
 
     if params.get("output") is not None:
         params["output_directory"] = params["output"]
@@ -768,6 +772,19 @@ def run_workflow(
         params["otel_service_version"] = __version__
 
     config = _build_config(params)
+
+    if _dry_run:
+        from ..component_model.asyncio_files import load_workflow_json, stream_json_objects
+        from ..entrypoints.workflow import _resolve_workflow, _ensure_api_format, _apply_overrides
+        async def _dry():
+            for w in config.workflows:
+                resolved = _resolve_workflow(w)
+                async for obj in stream_json_objects(resolved):
+                    obj = _ensure_api_format(obj)
+                    obj = _apply_overrides(obj, config)
+                    typer.echo(json.dumps(obj, indent=2))
+        asyncio.run(_dry())
+        return
 
     if _all:
         _install_workflow_requirements(config.workflows)
@@ -789,7 +806,7 @@ def run_workflow(
 
     from ..entrypoints.workflow import run_workflows
     try:
-        asyncio.run(run_workflows(config.workflows, configuration=config))
+        asyncio.run(run_workflows(config.workflows, configuration=config, output_format=_format))
     except KeyboardInterrupt:
         pass
 
@@ -972,7 +989,7 @@ def _load_core_class_types() -> frozenset[str]:
 @app.command(name="workflow-requirements", rich_help_panel="Workflows", hidden=True)
 def workflow_requirements(
     workflow_file: str = typer.Argument(..., help="Workflow file, URI, or literal JSON."),
-    format: str = typer.Option("requirements_txt", "--format", "-f", help="Output format: requirements_txt, requirements_txt_versioned, requirements_txt_locked"),
+    format: str = typer.Option("requirements_txt", "--format", "-f", help="Output format: requirements_txt, requirements_txt_versioned, requirements_txt_locked, json"),
     snapshot_uri: Optional[str] = typer.Option(None, "--pip-facade-snapshot-uri", help="Facade registry snapshot URI. Defaults to the bundled snapshot."),
 ):
     """Print custom node packages required by a workflow in pip requirements format."""
@@ -985,6 +1002,11 @@ def workflow_requirements(
         snapshot_uri=snapshot_uri,
         builtin_class_types=_load_core_class_types(),
     )
+
+    if format == "json":
+        from rich.console import Console
+        Console().print_json(json.dumps([{"package": name, "version": version} for name, version in packages]))
+        return
 
     for name, version in packages:
         if format == "requirements_txt_versioned" and version:
@@ -1015,6 +1037,7 @@ def start(ctx: typer.Context):
 
 @app.command(name="stop", rich_help_panel="Daemon")
 def stop(
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     server: Optional[str] = typer.Option(None, "--server", envvar="COMFYUI_SERVER", help="Server URL for HTTP fallback."),
     pid_file: Optional[str] = typer.Option(None, "--pid-file", help="PID file path (default: ~/.comfyui/comfyui.pid)."),
 ):
@@ -1027,12 +1050,18 @@ def stop(
 
     pf = pid_file or default_pid_file()
     if stop_daemon(pf):
-        typer.echo("ComfyUI daemon stopped.")
+        if format == "json":
+            typer.echo(json.dumps({"status": "stopped"}))
+        else:
+            typer.echo("ComfyUI daemon stopped.")
         return
     try:
         from .server_connection import post_json
         asyncio.run(post_json(server, "/interrupt"))
-        typer.echo("Sent interrupt to server.")
+        if format == "json":
+            typer.echo(json.dumps({"status": "interrupted"}))
+        else:
+            typer.echo("Sent interrupt to server.")
     except Exception as exc:
         typer.echo(f"Could not stop daemon: {exc}", err=True)
         raise typer.Exit(1)

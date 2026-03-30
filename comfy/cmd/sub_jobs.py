@@ -63,19 +63,21 @@ async def _list_jobs(status: Optional[str], limit: Optional[int], format: str, s
 @jobs_app.command(name="cancel")
 def jobs_cancel(
     job_id: Optional[str] = typer.Argument(None, help="Job ID to cancel. If omitted, interrupts current execution."),
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     server: Optional[str] = typer.Option(None, "--server", envvar="COMFYUI_SERVER", help="Server URL."),
 ):
     """Cancel a job or interrupt current execution."""
-    asyncio.run(_cancel_job(job_id=job_id, server=server))
+    asyncio.run(_cancel_job(job_id=job_id, format=format, server=server))
 
 
-async def _cancel_job(job_id: Optional[str], server: Optional[str]):
+async def _cancel_job(job_id: Optional[str], format: str, server: Optional[str]):
     body = {}
     if job_id is not None:
         body["prompt_id"] = job_id
     await post_json(server, "/interrupt", body=body)
-    console = Console()
-    if job_id:
-        console.print(f"Requested cancellation of job {job_id}")
+    if format == "json":
+        Console().print_json(json.dumps({"status": "ok", "job_id": job_id}))
+    elif job_id:
+        Console().print(f"Requested cancellation of job {job_id}")
     else:
-        console.print("Requested interrupt of current execution")
+        Console().print("Requested interrupt of current execution")

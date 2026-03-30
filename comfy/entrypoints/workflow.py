@@ -106,7 +106,7 @@ def _resolve_workflow(workflow: str) -> str:
     return resolve_template(workflow)
 
 
-async def run_workflows(workflows: list[str | Literal["-"]], configuration: Optional[Configuration] = None):
+async def run_workflows(workflows: list[str | Literal["-"]], configuration: Optional[Configuration] = None, output_format: str = "table"):
     if configuration is None:
         from ..cli_args import args
         configuration = args
@@ -119,11 +119,17 @@ async def run_workflows(workflows: list[str | Literal["-"]], configuration: Opti
                 obj = _ensure_api_format(obj)
                 obj = _apply_overrides(obj, configuration)
                 try:
+                    import time as _time
+                    t0 = _time.monotonic()
                     if show_progress:
                         res = await _run_with_progress(comfy, obj)
                     else:
                         res = await comfy.queue_prompt_api(obj)
-                    typer.echo(json.dumps(res.outputs))
+                    elapsed = _time.monotonic() - t0
+                    if output_format == "json":
+                        typer.echo(json.dumps({"outputs": res.outputs, "elapsed_seconds": round(elapsed, 2)}))
+                    else:
+                        typer.echo(json.dumps(res.outputs))
                 except asyncio.CancelledError:
                     logger.info("Exiting gracefully.")
                     break

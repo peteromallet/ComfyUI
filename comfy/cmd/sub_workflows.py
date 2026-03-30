@@ -58,6 +58,8 @@ def workflows_list(
 def workflows_run(
     workflows: list[str] = typer.Argument(..., help="Workflow files, URIs, template names, '-' for stdin, or literal JSON."),
     all: bool = typer.Option(False, "--all", "-a", help="Install missing custom nodes and download missing models before running."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Resolve and print workflow JSON without executing."),
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     disable_progress: bool = typer.Option(False, "--disable-progress", help="Disable CLI progress bars."),
     block_runtime_package_installation: bool = typer.Option(False, "--block-runtime-package-installation", help="Block runtime package installations."),
     **kwargs,
@@ -66,13 +68,16 @@ def workflows_run(
 
     With --all, automatically install missing custom nodes from
     nodes.appmana.com and download missing models before running.
+    With --dry-run, resolve and print the workflow JSON without executing.
     """
     from ..component_model.setup import setup_pre_torch, setup_post_torch
 
     _all = all
+    _dry_run = dry_run
+    _format = format
     params = _collect_params(locals(), kwargs)
-    params.pop("all", None)
-    params.pop("_all", None)
+    for _k in ("all", "_all", "dry_run", "_dry_run", "format", "_format"):
+        params.pop(_k, None)
 
     if params.get("output") is not None:
         params["output_directory"] = params["output"]
@@ -82,6 +87,19 @@ def workflows_run(
         params["otel_service_version"] = __version__
 
     config = _build_config(params)
+
+    if _dry_run:
+        from ..component_model.asyncio_files import load_workflow_json, stream_json_objects
+        from ..entrypoints.workflow import _resolve_workflow, _ensure_api_format, _apply_overrides
+        async def _dry():
+            for w in config.workflows:
+                resolved = _resolve_workflow(w)
+                async for obj in stream_json_objects(resolved):
+                    obj = _ensure_api_format(obj)
+                    obj = _apply_overrides(obj, config)
+                    typer.echo(json.dumps(obj, indent=2))
+        asyncio.run(_dry())
+        return
 
     if _all:
         from .cli import _install_workflow_requirements
@@ -105,7 +123,7 @@ def workflows_run(
 
     from ..entrypoints.workflow import run_workflows
     try:
-        asyncio.run(run_workflows(config.workflows, configuration=config))
+        asyncio.run(run_workflows(config.workflows, configuration=config, output_format=_format))
     except KeyboardInterrupt:
         pass
 
@@ -216,7 +234,7 @@ def workflows_convert(
 @workflows_app.command(name="show")
 def workflows_show(
     file: str = typer.Argument(..., help="Workflow file, URI, template name, or literal JSON."),
-    format: str = typer.Option("command", "--format", help="Output format: command or table."),
+    format: str = typer.Option("command", "--format", help="Output format: command, table, or json."),
 ):
     """Show a copy-pasteable invocation command for a workflow."""
     from pathlib import Path
@@ -245,7 +263,15 @@ def workflows_show(
     params = _detect_supported_params(workflow)
     tmpl = TemplateInfo(name=path.stem, source="file", path=str(path), supported_params=params)
 
-    if format == "table":
+    if format == "json":
+        record = {
+            "name": tmpl.name,
+            "path": tmpl.path,
+            "supported_params": params,
+            "command": _build_example_invocation(tmpl),
+        }
+        Console().print_json(json.dumps(record))
+    elif format == "table":
         console = Console()
         table = Table(show_edge=False, pad_edge=False, box=None)
         table.add_column("Parameter", no_wrap=True)
@@ -263,7 +289,7 @@ def workflows_show(
 @workflows_app.command(name="requirements")
 def workflows_requirements(
     workflow_file: str = typer.Argument(..., help="Workflow file, URI, or literal JSON."),
-    format: str = typer.Option("requirements_txt", "--format", "-f", help="Output format: requirements_txt, requirements_txt_versioned, requirements_txt_locked"),
+    format: str = typer.Option("requirements_txt", "--format", "-f", help="Output format: requirements_txt, requirements_txt_versioned, requirements_txt_locked, json"),
     snapshot_uri: Optional[str] = typer.Option(None, "--pip-facade-snapshot-uri", help="Facade registry snapshot URI."),
 ):
     """Print custom node packages required by a workflow in pip requirements format.

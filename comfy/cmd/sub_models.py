@@ -163,6 +163,7 @@ def models_available(
 def models_download(
     uri: str = typer.Argument(..., help="Model URI to download (hf://, https://, etc)."),
     folder: Optional[str] = typer.Option(None, "--folder", help="Target model folder."),
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     cwd: Optional[str] = typer.Option(None, "-w", "--cwd", help="Working directory."),
     base_directory: Optional[str] = typer.Option(None, "--base-directory", help="Base directory."),
     base_paths: Optional[list[str]] = typer.Option(None, "--base-paths", help="Additional base paths."),
@@ -174,12 +175,15 @@ def models_download(
 
     from ..model_downloader import get_or_download
 
-    console = Console()
     path = get_or_download(uri, folder)
-    if path:
-        console.print(f"Model available at: {path}")
+    if format == "json":
+        Console().print_json(json.dumps({"uri": uri, "path": str(path) if path else None, "status": "ok" if path else "failed"}))
+        if not path:
+            raise typer.Exit(1)
+    elif path:
+        Console().print(f"Model available at: {path}")
     else:
-        console.print("Download failed or model not found.", style="bold red")
+        Console().print("Download failed or model not found.", style="bold red")
         raise typer.Exit(1)
 
 
@@ -187,6 +191,7 @@ def models_download(
 def models_from_workflow(
     workflow_file: str = typer.Argument(..., help="Workflow file, URI, or literal JSON."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Check availability without downloading."),
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     cwd: Optional[str] = typer.Option(None, "-w", "--cwd", help="Working directory."),
     base_directory: Optional[str] = typer.Option(None, "--base-directory", help="Base directory."),
     base_paths: Optional[list[str]] = typer.Option(None, "--base-paths", help="Additional base paths."),
@@ -253,20 +258,31 @@ def models_from_workflow(
                 model_refs.append((folder_name, value))
 
     if not model_refs:
-        typer.echo("No model references found in workflow.", err=True)
+        if format == "json":
+            Console().print_json("[]")
+        else:
+            typer.echo("No model references found in workflow.", err=True)
         return
 
+    results = []
     for folder_name, filename in sorted(model_refs):
         if dry_run:
             found = folder_paths.get_full_path(folder_name, filename)
         else:
             found = get_or_download(folder_name, filename)
-        typer.echo(f"{folder_name}/{filename}", err=not found)
+        results.append({"folder": folder_name, "filename": filename, "found": bool(found)})
+
+    if format == "json":
+        Console().print_json(json.dumps(results))
+    else:
+        for r in results:
+            typer.echo(f"{r['folder']}/{r['filename']}", err=not r["found"])
 
 
 @models_app.command(name="paths", context_settings=_COMFYUI_ENV)
 def models_paths(
     folder: Optional[str] = typer.Option(None, "--folder", help="Filter by model folder."),
+    format: str = typer.Option("table", "--format", help="Output format: table or json."),
     cwd: Optional[str] = typer.Option(None, "-w", "--cwd", help="Working directory."),
     base_directory: Optional[str] = typer.Option(None, "--base-directory", help="Base directory."),
     base_paths: Optional[list[str]] = typer.Option(None, "--base-paths", help="Additional base paths."),
@@ -279,11 +295,7 @@ def models_paths(
     from . import folder_paths
     fnp = folder_paths._folder_names_and_paths()
 
-    console = Console()
-    table = Table(show_edge=False, pad_edge=False, box=None)
-    table.add_column("Folder", no_wrap=True)
-    table.add_column("Paths")
-
+    rows = []
     seen: set[str] = set()
     for item in fnp.contents:
         for name in item.folder_names:
@@ -293,5 +305,16 @@ def models_paths(
             if folder and name != folder:
                 continue
             dirs = [str(p) for p in fnp.directory_paths(name)]
-            table.add_row(name, "\n".join(dirs) if dirs else "(none)")
+            rows.append({"folder": name, "paths": dirs})
+
+    if format == "json":
+        Console().print_json(json.dumps(rows))
+        return
+
+    console = Console()
+    table = Table(show_edge=False, pad_edge=False, box=None)
+    table.add_column("Folder", no_wrap=True)
+    table.add_column("Paths")
+    for r in rows:
+        table.add_row(r["folder"], "\n".join(r["paths"]) if r["paths"] else "(none)")
     console.print(table)
