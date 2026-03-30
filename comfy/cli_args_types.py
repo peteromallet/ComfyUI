@@ -382,6 +382,8 @@ class Configuration(dict):
         self.height: Optional[int] = None
         self.batch_size: Optional[int] = None
         self.checkpoint: Optional[str] = None
+        self.lora: Optional[str] = None
+        self.output_prefix: Optional[str] = None
         self.set: list[str] = []
 
         for key, value in kwargs.items():

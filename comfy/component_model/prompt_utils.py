@@ -63,6 +63,18 @@ _LATENT_SIZE_CLASS_TYPES = frozenset({
 
 _CHECKPOINT_CLASS_TYPES = frozenset({
     "CheckpointLoaderSimple",
+    "UNETLoader",
+})
+
+_LORA_CLASS_TYPES = frozenset({
+    "LoraLoader",
+    "LoraLoaderModelOnly",
+})
+
+_SAVE_IMAGE_CLASS_TYPES = frozenset({
+    "SaveImage",
+    "SaveAnimatedWEBP",
+    "SaveAnimatedPNG",
 })
 
 _IMAGE_LOAD_CLASS_TYPES = frozenset({
@@ -393,3 +405,11 @@ def replace_batch_size(prompt: dict, batch_size: int) -> dict:
 
 def replace_checkpoint(prompt: dict, ckpt_name: str) -> dict:
     return _replace_field_in_nodes(prompt, _CHECKPOINT_CLASS_TYPES, "ckpt_name", ckpt_name)
+
+
+def replace_lora(prompt: dict, lora_name: str) -> dict:
+    return _replace_field_in_nodes(prompt, _LORA_CLASS_TYPES, "lora_name", lora_name)
+
+
+def replace_output_prefix(prompt: dict, prefix: str) -> dict:
+    return _replace_field_in_nodes(prompt, _SAVE_IMAGE_CLASS_TYPES, "filename_prefix", prefix)

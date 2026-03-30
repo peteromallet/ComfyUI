@@ -60,6 +60,7 @@ def _apply_overrides(obj: dict, configuration: Configuration) -> dict:
         replace_images, replace_videos, replace_audios,
         replace_cfg, replace_sampler, replace_scheduler, replace_denoise,
         replace_width, replace_height, replace_batch_size, replace_checkpoint,
+        replace_lora, replace_output_prefix,
     )
 
     if configuration.prompt is not None:
@@ -86,6 +87,10 @@ def _apply_overrides(obj: dict, configuration: Configuration) -> dict:
         obj = replace_batch_size(obj, configuration.batch_size)
     if configuration.checkpoint is not None:
         obj = replace_checkpoint(obj, configuration.checkpoint)
+    if configuration.lora is not None:
+        obj = replace_lora(obj, configuration.lora)
+    if configuration.output_prefix is not None:
+        obj = replace_output_prefix(obj, configuration.output_prefix)
     if configuration.image is not None:
         obj = replace_images(obj, configuration.image)
     if configuration.video is not None:
