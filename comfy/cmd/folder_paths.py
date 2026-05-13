@@ -191,6 +191,12 @@ def init_default_paths(folder_names_and_paths: FolderNames, configuration: Optio
                 del folder_names_and_paths[folder_name]
         folder_names_and_paths.add(model_paths)
 
+    if configuration.extra_model_paths_config:
+        from ..extra_config import load_extra_path_config
+
+        for config_path in configuration.extra_model_paths_config:
+            load_extra_path_config(config_path, folder_names_and_paths)
+
     if create_all_directories:
         create_directories(folder_names_and_paths)
 
