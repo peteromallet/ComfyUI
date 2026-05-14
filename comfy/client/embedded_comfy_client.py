@@ -9,6 +9,7 @@ import copy
 import gc
 import json
 import logging
+import os
 import threading
 import uuid
 from asyncio import get_event_loop
@@ -38,6 +39,15 @@ from ..component_model.configuration import MODEL_MANAGEMENT_ARGS, requires_proc
 _prompt_executor = threading.local()
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_timeout_sec() -> float:
+    raw = os.environ.get("VIBECOMFY_EMBEDDED_SHUTDOWN_TIMEOUT_SEC", "15")
+    try:
+        value = float(raw)
+    except ValueError:
+        return 15.0
+    return max(value, 0.1)
 
 
 def _add_node_site_to_path(configuration: Configuration | None) -> None:
@@ -374,8 +384,6 @@ class Comfy:
         from ..execution_context import context_configuration
         cm = context_configuration(self._configuration)
         self._exit_stack.enter_context(cm)
-        if self._owns_executor:
-            self._exit_stack.enter_context(self._executor)
         return self
 
     @property
@@ -441,13 +449,6 @@ class Comfy:
         else:
             self._executor = ContextVarExecutor(max_workers=self._max_workers)
 
-        # Re-register the executor with any open exit stack so __exit__ /
-        # __aexit__ still cleans it up when the client tears down.
-        if self._async_exit_stack is not None:
-            self._async_exit_stack.enter_context(self._executor)
-        elif self._exit_stack is not None:
-            self._exit_stack.enter_context(self._executor)
-
         self._configuration = new_configuration
         self._fingerprint = new_fp
         return True
@@ -455,7 +456,11 @@ class Comfy:
     def __exit__(self, *args):
         get_event_loop().run_in_executor(self._executor, _cleanup)
         self._is_running = False
-        self._exit_stack.__exit__(*args)
+        try:
+            self._exit_stack.__exit__(*args)
+        finally:
+            if self._owns_executor:
+                self._executor.shutdown(wait=True)
 
     async def __aenter__(self):
         self._async_exit_stack = contextlib.AsyncExitStack()
@@ -463,8 +468,6 @@ class Comfy:
         from ..execution_context import context_configuration
         cm = context_configuration(self._configuration)
         self._async_exit_stack.enter_context(cm)
-        if self._owns_executor:
-            self._async_exit_stack.enter_context(self._executor)
 
         from ..manager_model_cache import init_manager_model_cache
         init_manager_model_cache(
@@ -478,10 +481,23 @@ class Comfy:
         while self.task_count > 0:
             await asyncio.sleep(0.1)
 
-        await get_event_loop().run_in_executor(self._executor, _cleanup)
+        cleanup_timed_out = False
+        cleanup = get_event_loop().run_in_executor(self._executor, _cleanup)
+        try:
+            await asyncio.wait_for(cleanup, timeout=_cleanup_timeout_sec())
+        except asyncio.TimeoutError:
+            cleanup_timed_out = True
+            logger.warning(
+                "embedded Comfy cleanup timed out after %.1fs; continuing with context teardown",
+                _cleanup_timeout_sec(),
+            )
 
         self._is_running = False
-        await self._async_exit_stack.__aexit__(*args)
+        try:
+            await self._async_exit_stack.__aexit__(*args)
+        finally:
+            if self._owns_executor:
+                self._executor.shutdown(wait=not cleanup_timed_out, cancel_futures=cleanup_timed_out)
 
     async def queue_prompt_api(self,
                                prompt: PromptDict | str | dict,
