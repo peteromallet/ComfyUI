@@ -388,7 +388,7 @@ class PromptServer(ExecutorToClientProgress):
             async with aiofiles.open(os.path.join(self.web_root, "index.html"), "r") as index_file:
                 index_html = await index_file.read()
 
-            index_html = index_html.replace("<title>ComfyUI</title>", "<title>Vibe Comfy</title>")
+            index_html = index_html.replace("<title>ComfyUI</title>", "<title>VibeComfy</title>")
             vibe_title = (
                 '<div id="vibecomfy-window-title" '
                 'style="position:fixed;top:8px;left:50%;transform:translateX(-50%);'
@@ -396,7 +396,7 @@ class PromptServer(ExecutorToClientProgress):
                 'font:600 14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
                 'text-shadow:0 1px 3px #000;background:rgba(16,16,16,.72);'
                 'border:1px solid rgba(255,255,255,.16);border-radius:6px;'
-                'padding:4px 9px;">Vibe Comfy</div>'
+                'padding:4px 9px;">VibeComfy</div>'
             )
             index_html = index_html.replace("</body>", f"{vibe_title}</body>")
             response = web.Response(text=index_html, content_type="text/html")
