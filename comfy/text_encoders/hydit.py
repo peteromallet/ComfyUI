@@ -1,7 +1,7 @@
 import copy
 
 import torch
-from ..transformers_compat import BertTokenizerFast as BertTokenizer
+from transformers import BertTokenizerFast as BertTokenizer
 
 from .bert import BertModel
 from .spiece_tokenizer import SPieceTokenizer

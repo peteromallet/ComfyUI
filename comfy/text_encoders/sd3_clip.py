@@ -3,7 +3,7 @@ import logging
 from ..utils import detect_layer_quantization
 
 import torch
-from ..transformers_compat import T5TokenizerFast
+from transformers import T5TokenizerFast
 
 from .t5 import T5
 from .. import sd1_clip, model_management

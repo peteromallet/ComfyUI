@@ -4,7 +4,7 @@ import base64
 
 import torch
 from .llama import Qwen3_4B, Qwen3_8B
-from ..transformers_compat import T5TokenizerFast, LlamaTokenizerFast, Qwen2TokenizerFast
+from transformers import T5TokenizerFast, LlamaTokenizerFast, Qwen2TokenizerFast
 
 from .sd3_clip import T5XXLModel
 from .. import sd1_clip, model_management

@@ -1,4 +1,4 @@
-from ..transformers_compat import Qwen2Tokenizer, T5TokenizerFast
+from transformers import Qwen2Tokenizer, T5TokenizerFast
 from . import llama
 from .. import sd1_clip
 import os
